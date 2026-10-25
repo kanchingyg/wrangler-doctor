@@ -3,7 +3,7 @@
 [![ci](https://github.com/kanchingyg/wrangler-doctor/actions/workflows/ci.yml/badge.svg)](https://github.com/kanchingyg/wrangler-doctor/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/wrangler-doctor)](https://www.npmjs.com/package/wrangler-doctor)
 [![JSR](https://jsr.io/badges/@kanchingyg/wrangler-doctor)](https://jsr.io/@kanchingyg/wrangler-doctor)
-[![license](https://img.shields.io/npm/l/wrangler-doctor)](https://github.com/kanchingyg/wrangler-doctor/blob/HEAD/LICENSE)
+[![license](https://img.shields.io/github/license/kanchingyg/wrangler-doctor)](https://github.com/kanchingyg/wrangler-doctor/blob/HEAD/LICENSE)
 
 wrangler-doctor checks Cloudflare Workers configs, D1 migrations, and workerd runtime contracts offline, and provides a local D1 snapshot and Workflow test harness.
 

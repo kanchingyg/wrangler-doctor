@@ -2,6 +2,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { BindingSet, Finding, ParsedWorkerConfig } from "../types.js";
 
+/**
+ * Creates an empty `BindingSet` with all binding category arrays initialized.
+ */
 export function emptyBindingSet(): BindingSet {
   return {
     d1_databases: [],
@@ -18,6 +21,12 @@ export function emptyBindingSet(): BindingSet {
   };
 }
 
+/**
+ * Strips `//` line comments, `block` block comments, and trailing commas from JSONC text.
+ *
+ * @param input - Raw JSONC string.
+ * @returns Valid JSON string ready for `JSON.parse`.
+ */
 export function stripJsonComments(input: string): string {
   let out = "";
   let inString = false;
@@ -319,6 +328,13 @@ function parseTomlMinimal(content: string, configPath: string): ParsedWorkerConf
   };
 }
 
+/**
+ * Parses `wrangler.jsonc`, `wrangler.json`, or `wrangler.toml` in `projectDir` into a normalized
+ * `ParsedWorkerConfig` structure.
+ *
+ * @param projectDir - Root directory of the Cloudflare Worker project.
+ * @returns Normalized `ParsedWorkerConfig`, or `null` if no Wrangler configuration file exists.
+ */
 export function parseWorkerConfig(projectDir: string): ParsedWorkerConfig | null {
   const jsoncPath = join(projectDir, "wrangler.jsonc");
   const jsonPath = join(projectDir, "wrangler.json");
@@ -472,6 +488,12 @@ export function parseWorkerConfig(projectDir: string): ParsedWorkerConfig | null
   return null;
 }
 
+/**
+ * Collects all binding and variable names from a `BindingSet` into a single `Set<string>`.
+ *
+ * @param set - Grouped binding set.
+ * @returns Set of all binding names in `set`.
+ */
 export function flattenBindings(set: BindingSet): Set<string> {
   const out = new Set<string>();
   for (const list of Object.values(set)) {
@@ -480,6 +502,14 @@ export function flattenBindings(set: BindingSet): Set<string> {
   return out;
 }
 
+/**
+ * Recursively collects `.ts`, `.tsx`, `.js`, and `.mjs` source files under `dir`,
+ * excluding `node_modules`, `dist`, `.git`, `.wrangler`, and `.d.ts` declaration files.
+ *
+ * @param dir - Directory to scan.
+ * @param out - Accumulator array for discovered file paths.
+ * @returns Array of absolute source file paths.
+ */
 export function collectTsFiles(dir: string, out: string[] = []): string[] {
   if (!existsSync(dir)) return out;
   for (const entry of readdirSync(dir)) {
@@ -530,6 +560,15 @@ function parseDevVarsKeys(filePath: string): Set<string> {
 const SECRET_KEY_RE = /(SECRET|PRIVATE_KEY|PASSWORD|API_KEY|AUTH_TOKEN|ACCESS_TOKEN|WEBHOOK_SECRET)/i;
 const SECRET_VAL_RE = /^(sk_live_|rk_live_|ghp_[A-Za-z0-9]{20,}|xoxb-[0-9]+|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/;
 
+/**
+ * Audits multi-environment Wrangler configuration, source `env.<KEY>` accesses, `worker-configuration.d.ts`
+ * drift, plaintext secrets in `vars`, and `.dev.vars.example` completeness (`WD101` through `WD105`).
+ *
+ * @param projectDir - Root directory of the Cloudflare Worker project.
+ * @param parsedConfig - Parsed Wrangler configuration, or `null` if none exists.
+ * @param targetEnv - Optional named environment to check exclusively.
+ * @returns Array of `env-matrix` findings.
+ */
 export function checkEnvMatrix(
   projectDir: string,
   parsedConfig: ParsedWorkerConfig | null,

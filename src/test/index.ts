@@ -1,3 +1,19 @@
+/**
+ * Fast local D1 snapshot seeder (`createD1SnapshotSeeder`), Worker environment harness
+ * (`createCfTestEnv`), and deterministic Workflow runner (`runWorkflowHarness`) for Cloudflare Workers tests.
+ *
+ * @example
+ * ```ts
+ * import { createCfTestEnv, createD1SnapshotSeeder, runWorkflowHarness } from "@kanchingyg/wrangler-doctor/test";
+ *
+ * const seeder = createD1SnapshotSeeder({ migrationsDir: "./migrations" });
+ * const clone = seeder.cloneForTestFile("orders.test.ts");
+ * clone.cleanup();
+ * seeder.cleanupAll();
+ * ```
+ *
+ * @module
+ */
 import {
   constants as fsConstants,
   copyFileSync,
@@ -12,38 +28,82 @@ import { join } from "node:path";
 import { parseWorkerConfig } from "../engines/env-matrix.js";
 import { openSqlite, type SqliteDb } from "../sqlite-adapter.js";
 
+export { openSqlite, type SqliteDb };
+
+/**
+ * Execution metadata returned by D1 query operations (`all` and `run`).
+ */
+export interface D1ResultMeta {
+  /** Execution duration in milliseconds. */
+  duration: number;
+  /** Number of rows read by the statement. */
+  rows_read: number;
+  /** Number of rows written by the statement. */
+  rows_written: number;
+}
+
+/**
+ * Result object returned by `D1PreparedStatementLike.all()` and `D1DatabaseLike.batch()`.
+ */
+export interface D1QueryResult<T = Record<string, unknown>> {
+  /** Array of returned result rows. */
+  results: T[];
+  /** Indicates successful execution (`true`). */
+  success: true;
+  /** Statement execution metadata. */
+  meta: D1ResultMeta;
+}
+
+/**
+ * Result object returned by `D1DatabaseLike.exec()`.
+ */
+export interface D1ExecResult {
+  /** Number of executed SQL statements. */
+  count: number;
+  /** Total execution duration in milliseconds. */
+  duration: number;
+}
+
+/**
+ * Cloudflare D1-compatible prepared statement interface backed by local SQLite.
+ */
 export interface D1PreparedStatementLike {
+  /** SQL query string for this prepared statement. */
   readonly query: string;
+  /** Bound parameter values (`<= 100` parameters enforced per `workers-sdk#6226`). */
   readonly params: unknown[];
+  /** Returns a new prepared statement with the given positional parameters bound. */
   bind(...values: unknown[]): D1PreparedStatementLike;
-  all<T = Record<string, unknown>>(): Promise<{
-    results: T[];
-    success: true;
-    meta: { duration: number; rows_read: number; rows_written: number };
-  }>;
+  /** Executes the query and returns all matching rows with D1 metadata. */
+  all<T = Record<string, unknown>>(): Promise<D1QueryResult<T>>;
+  /** Executes the query and returns the first row (or column `colName`), or `null` if none matched. */
   first<T = Record<string, unknown>>(colName?: string): Promise<T | null>;
-  run(): Promise<{
-    results: [];
-    success: true;
-    meta: { duration: number; rows_read: number; rows_written: number };
-  }>;
+  /** Executes a mutation query and returns execution metadata. */
+  run(): Promise<D1QueryResult<never>>;
+  /** Executes the query and returns rows as arrays of column values. */
   raw<T = unknown[]>(): Promise<T[]>;
 }
 
+/**
+ * Cloudflare D1-compatible database binding interface backed by local SQLite.
+ */
 export interface D1DatabaseLike {
+  /** Compiles a SQL query string into a prepared statement. */
   prepare(query: string): D1PreparedStatementLike;
+  /** Executes a batch of prepared statements atomically inside a SQLite `SAVEPOINT`. */
   batch<T = unknown>(
     statements: D1PreparedStatementLike[]
-  ): Promise<
-    Array<{
-      results: T[];
-      success: true;
-      meta: { duration: number; rows_read: number; rows_written: number };
-    }>
-  >;
-  exec(query: string): Promise<{ count: number; duration: number }>;
+  ): Promise<Array<D1QueryResult<T>>>;
+  /** Executes raw multi-statement SQL while rejecting interactive transactions (`workers-sdk#2733`). */
+  exec(query: string): Promise<D1ExecResult>;
 }
 
+/**
+ * Wraps a synchronous `SqliteDb` instance in a Cloudflare D1-compatible binding (`prepare`, `batch`, `exec`).
+ *
+ * @param db - Underlying `SqliteDb` instance.
+ * @returns D1-compatible database binding.
+ */
 export function createD1BindingFromSqlite(db: SqliteDb): D1DatabaseLike {
   const makeStmt = (query: string, boundParams: unknown[] = []): D1PreparedStatementLike => {
     if (boundParams.length > 100) {
@@ -140,24 +200,45 @@ export function createD1BindingFromSqlite(db: SqliteDb): D1DatabaseLike {
   };
 }
 
+/**
+ * Configuration options for `createD1SnapshotSeeder`.
+ */
 export interface D1SnapshotSeederOptions {
+  /** Directory containing ordered `.sql` migration files to apply once to the master database. */
   migrationsDir: string;
+  /** Optional SQL seed script executed once after all migrations complete. */
   seedSql?: string;
+  /** Optional prefix for the temporary directory holding snapshot files. */
   tmpPrefix?: string;
 }
 
+/**
+ * Isolated per-test-file SQLite clone and D1 binding created from a `D1SnapshotSeeder`.
+ */
 export interface ClonedD1Snapshot {
+  /** Absolute path to the cloned `.sqlite` file on disk. */
   sqlitePath: string;
+  /** Underlying synchronous `SqliteDb` handle. */
   db: SqliteDb;
+  /** Cloudflare D1-compatible binding wrapping `db`. */
   d1: D1DatabaseLike;
+  /** Time taken to clone and open the snapshot in milliseconds. */
   elapsedMs: number;
+  /** Closes `db` and removes the cloned `.sqlite` file from disk. */
   cleanup(): void;
 }
 
+/**
+ * Master D1 SQLite snapshot manager that applies migrations once and clones isolated databases in milliseconds.
+ */
 export interface D1SnapshotSeeder {
+  /** Absolute path to the pre-migrated master `.sqlite` file. */
   readonly masterSqlitePath: string;
+  /** Ordered list of `.sql` migration filenames applied to the master database. */
   readonly appliedMigrations: string[];
+  /** Clones the master SQLite file via `COPYFILE_FICLONE` (when supported) for an isolated test run. */
   cloneForTestFile(label?: string): ClonedD1Snapshot;
+  /** Removes the temporary directory containing the master database and all clones. */
   cleanupAll(): void;
 }
 
@@ -169,6 +250,13 @@ function copyFileFast(src: string, dest: string): void {
   }
 }
 
+/**
+ * Applies all `.sql` migrations in `options.migrationsDir` once to a master SQLite file and returns
+ * a seeder that clones isolated D1 bindings per test file in 1 to 4 ms (`workers-sdk#16296`).
+ *
+ * @param options - Migrations directory and optional seed SQL.
+ * @returns `D1SnapshotSeeder` handle.
+ */
 export function createD1SnapshotSeeder(
   options: D1SnapshotSeederOptions
 ): D1SnapshotSeeder {
@@ -237,18 +325,33 @@ export function createD1SnapshotSeeder(
   };
 }
 
+/**
+ * Options for constructing an in-memory Worker test environment via `createCfTestEnv`.
+ */
 export interface CreateCfTestEnvOptions {
+  /** Worker project directory containing `wrangler.jsonc`, `wrangler.toml`, or `cloudflare.config.ts`. */
   projectDir: string;
+  /** Optional named environment (`[env.<name>]`) to load bindings from. */
   env?: string;
+  /** Optional custom D1 migrations directory override. */
   d1MigrationsDir?: string;
+  /** Optional SQL seed script executed once on the master D1 snapshot. */
   seedSql?: string;
+  /** Optional environment variable overrides merged onto `env`. */
   vars?: Record<string, string>;
 }
 
+/**
+ * Active Worker test environment handle returned by `createCfTestEnv`.
+ */
 export interface CfTestEnvHandle<TEnv = Record<string, unknown>> {
+  /** Populated Worker `env` object containing D1, KV, R2, Queue, and `vars` bindings. */
   env: TEnv;
+  /** Captured messages sent to each Queue producer binding (`sentQueueMessages[bindingName]`). */
   sentQueueMessages: Record<string, unknown[]>;
+  /** Resets all D1 database bindings to a fresh clone of the pre-migrated snapshot. */
   resetD1(): void;
+  /** Closes all SQLite connections and deletes temporary snapshot files. */
   dispose(): void;
 }
 
@@ -311,6 +414,13 @@ function createInMemoryR2() {
   };
 }
 
+/**
+ * Builds an isolated Worker `env` object (D1 snapshots, KV, R2, Queues, `.dev.vars`, and `vars`)
+ * directly from `wrangler.jsonc`, `wrangler.toml`, or `cloudflare.config.ts` without spawning `workerd`.
+ *
+ * @param options - Project directory, environment name, and optional D1 seed overrides.
+ * @returns `CfTestEnvHandle` with `env`, `sentQueueMessages`, `resetD1()`, and `dispose()`.
+ */
 export function createCfTestEnv<TEnv = Record<string, unknown>>(
   options: CreateCfTestEnvOptions
 ): CfTestEnvHandle<TEnv> {
@@ -418,45 +528,106 @@ export function createCfTestEnv<TEnv = Record<string, unknown>>(
   };
 }
 
+/**
+ * Retry policy configuration for a Cloudflare Workflow step.
+ */
+export interface WorkflowStepRetryConfig {
+  /** Maximum number of retry attempts after the initial failure. */
+  limit: number;
+  /** Delay between retries (duration string or milliseconds). */
+  delay: string | number;
+  /** Optional retry backoff strategy (`constant`, `linear`, or `exponential`). */
+  backoff?: "constant" | "linear" | "exponential";
+}
+
+/**
+ * Configuration options for `step.do(name, config, callback)`.
+ */
 export interface WorkflowStepConfig {
-  retries?: {
-    limit: number;
-    delay: string | number;
-    backoff?: "constant" | "linear" | "exponential";
-  };
+  /** Optional retry policy for the step. */
+  retries?: WorkflowStepRetryConfig;
+  /** Optional execution timeout for the step. */
   timeout?: string | number;
 }
 
+/**
+ * Recorded execution trace entry for a single Workflow step (`do`, `sleep`, `sleepUntil`, or `waitForEvent`).
+ */
 export interface WorkflowStepRecord {
+  /** Step primitive type executed. */
   type: "do" | "sleep" | "sleepUntil" | "waitForEvent";
+  /** Step name passed to `step.<type>(name, ...)`. */
   name: string;
+  /** Number of attempts executed (`1` when succeeding on the first try). */
   attempts: number;
+  /** JSON-serializable output returned by the step, if any. */
   output?: unknown;
+  /** Sleep duration or target ISO timestamp recorded for `sleep` and `sleepUntil`. */
   duration?: string | number;
+  /** Event type string awaited by `waitForEvent`. */
   eventType?: string;
 }
 
+/**
+ * Options passed to `step.waitForEvent(name, options)`.
+ */
+export interface WorkflowWaitForEventOptions {
+  /** Event type identifier to wait for. */
+  type: string;
+  /** Optional timeout duration. */
+  timeout?: string | number;
+}
+
+/**
+ * Event envelope returned by `step.waitForEvent(name, options)`.
+ */
+export interface WorkflowReceivedEvent<T = unknown> {
+  /** Mocked event payload. */
+  payload: T;
+  /** Timestamp when the event was delivered. */
+  timestamp: Date;
+  /** Event type identifier. */
+  type: string;
+}
+
+/**
+ * Step execution context passed to `WorkflowEntrypoint.run(event, step)`.
+ */
 export interface WorkflowStepContext {
+  /** Executes a named unit of work and validates that its return value is JSON-serializable. */
   do<T>(name: string, callback: () => Promise<T> | T): Promise<T>;
+  /** Executes a named unit of work with explicit retry/timeout config. */
   do<T>(
     name: string,
     config: WorkflowStepConfig,
     callback: () => Promise<T> | T
   ): Promise<T>;
+  /** Records a deterministic sleep step without blocking wall-clock time. */
   sleep(name: string, duration: string | number): Promise<void>;
+  /** Records a deterministic sleepUntil step without blocking wall-clock time. */
   sleepUntil(name: string, timestamp: Date | number | string): Promise<void>;
+  /** Resolves immediately with `options.mockEvents[options.type]` or throws a timeout error. */
   waitForEvent<T = unknown>(
     name: string,
-    options: { type: string; timeout?: string | number }
-  ): Promise<{ payload: T; timestamp: Date; type: string }>;
+    options: WorkflowWaitForEventOptions
+  ): Promise<WorkflowReceivedEvent<T>>;
 }
 
+/**
+ * Event object passed as the first argument to `WorkflowEntrypoint.run(event, step)`.
+ */
 export interface WorkflowEvent<TPayload = unknown> {
+  /** Input payload supplied when creating the Workflow instance. */
   payload: TPayload;
+  /** Creation timestamp of the Workflow event. */
   timestamp: Date;
+  /** Workflow instance ID (`^[a-zA-Z0-9_][a-zA-Z0-9-_]*$`, `<= 64` characters). */
   instanceId: string;
 }
 
+/**
+ * Lifecycle status of a Cloudflare Workflow instance, including `"rollback"` (`workers-sdk#16301`).
+ */
 export type WorkflowInstanceStatus =
   | "queued"
   | "running"
@@ -469,23 +640,61 @@ export type WorkflowInstanceStatus =
   | "rollback"
   | "unknown";
 
+/**
+ * Options for executing a `WorkflowEntrypoint` class in `runWorkflowHarness`.
+ */
 export interface RunWorkflowHarnessOptions<TEnv = Record<string, unknown>> {
+  /** Custom Workflow instance ID (validated against Cloudflare's 64-char regex contract). */
   instanceId?: string;
+  /** Worker `env` bindings passed to the `WorkflowClass` constructor. */
   env?: TEnv;
+  /** Execution context passed to the `WorkflowClass` constructor. */
   ctx?: unknown;
+  /** Optional map of step name to mocked return value or factory function. */
   stepMocks?: Record<string, unknown | (() => unknown | Promise<unknown>)>;
+  /** Optional map of event `type` to mocked payload for `step.waitForEvent()`. */
   mockEvents?: Record<string, unknown>;
+  /** When `true`, simulates the `"rollback"` instance status (`workers-sdk#16301`). */
   simulateRollback?: boolean;
 }
 
+/**
+ * Result returned by `runWorkflowHarness` after executing a Workflow.
+ */
 export interface WorkflowHarnessResult<TResult = unknown> {
+  /** Validated Workflow instance ID. */
   instanceId: string;
+  /** Final status of the Workflow instance (`complete`, `errored`, `rollback`, etc.). */
   status: WorkflowInstanceStatus;
+  /** Return value of `workflow.run()`, if status is `complete`. */
   output?: TResult;
+  /** Uncaught error thrown by `workflow.run()`, if status is `errored`. */
   error?: Error;
+  /** Ordered trace of all executed `do`, `sleep`, `sleepUntil`, and `waitForEvent` steps. */
   steps: WorkflowStepRecord[];
+  /** Total wall-clock execution duration in milliseconds. */
   elapsedMs: number;
 }
+
+/**
+ * Instance interface of a Cloudflare `WorkflowEntrypoint` class.
+ */
+export interface WorkflowInstanceLike<TPayload = unknown, TResult = unknown> {
+  /** Main entrypoint invoked by the Workflow runtime. */
+  run(
+    event: Readonly<WorkflowEvent<TPayload>>,
+    step: WorkflowStepContext
+  ): Promise<TResult>;
+}
+
+/**
+ * Constructor signature for a Cloudflare `WorkflowEntrypoint` class.
+ */
+export type WorkflowClassConstructor<
+  TPayload = unknown,
+  TResult = unknown,
+  TEnv = Record<string, unknown>
+> = new (ctx: unknown, env: TEnv) => WorkflowInstanceLike<TPayload, TResult>;
 
 const WORKFLOW_ID_CONTRACT = /^[a-zA-Z0-9_][a-zA-Z0-9-_]*$/;
 
@@ -505,20 +714,21 @@ function assertSerializableStepOutput(stepName: string, value: unknown): void {
   }
 }
 
+/**
+ * Executes a `WorkflowEntrypoint` class deterministically in memory without `workerd` timer freezes
+ * (`workers-sdk#16056`), validating instance ID contracts, step retry limits, and JSON serializability.
+ *
+ * @param WorkflowClass - `WorkflowEntrypoint` class constructor.
+ * @param payload - Input event payload passed to `run(event, step)`.
+ * @param options - Optional step mocks, event mocks, `env`, and `instanceId`.
+ * @returns `WorkflowHarnessResult` containing `status`, `output`, `steps`, and `elapsedMs`.
+ */
 export async function runWorkflowHarness<
   TPayload = unknown,
   TResult = unknown,
   TEnv = Record<string, unknown>
 >(
-  WorkflowClass: new (
-    ctx: unknown,
-    env: TEnv
-  ) => {
-    run(
-      event: Readonly<WorkflowEvent<TPayload>>,
-      step: WorkflowStepContext
-    ): Promise<TResult>;
-  },
+  WorkflowClass: WorkflowClassConstructor<TPayload, TResult, TEnv>,
   payload: TPayload,
   options: RunWorkflowHarnessOptions<TEnv> = {}
 ): Promise<WorkflowHarnessResult<TResult>> {

@@ -78,6 +78,16 @@ function findTopLevelDisallowedOps(content: string): Array<{ line: number; label
   return results;
 }
 
+/**
+ * Scans Worker source files and configuration for `workerd` runtime contract violations
+ * (`WD301` through `WD307`), including disallowed global-scope I/O, `Date.now()` inside `"use cache"`
+ * modules, invalid Workflow instance IDs, missing Durable Object or Workflow class exports,
+ * missing `new_sqlite_classes` migrations, `versions upload` Workflow traps, and bundle size budgets.
+ *
+ * @param projectDir - Root directory of the Cloudflare Worker project.
+ * @param parsedConfig - Parsed Wrangler configuration, or `null` if none exists.
+ * @returns Array of `workerd-contracts` findings.
+ */
 export function checkWorkerdContracts(
   projectDir: string,
   parsedConfig: ParsedWorkerConfig | null

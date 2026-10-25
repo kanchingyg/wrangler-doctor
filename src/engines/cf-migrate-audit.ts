@@ -2,6 +2,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { Finding, ParsedWorkerConfig } from "../types.js";
 
+/**
+ * Audits migration parity between `wrangler.jsonc`/`wrangler.toml` and `cloudflare.config.ts`
+ * (`WD401` through `WD404`), catching dropped Workflow bindings, Durable Object classes,
+ * custom D1 `migrations_dir`, `upload_source_maps`, `workers_dev`, and legacy service `environment` fields.
+ *
+ * @param projectDir - Root directory of the Cloudflare Worker project.
+ * @param parsedConfig - Parsed Wrangler configuration, or `null` if none exists.
+ * @returns Array of `cf-migrate` findings.
+ */
 export function checkCfMigrate(
   projectDir: string,
   parsedConfig: ParsedWorkerConfig | null

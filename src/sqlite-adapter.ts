@@ -1,13 +1,27 @@
 import { createRequire } from "node:module";
 
+/**
+ * Minimal synchronous SQLite database handle backed by `bun:sqlite` on Bun
+ * or `node:sqlite` (`DatabaseSync`) on Node.js 22.5+.
+ */
 export interface SqliteDb {
+  /** Executes one or more SQL statements without returning rows. */
   exec(sql: string): void;
+  /** Executes a parameterized query and returns all matching rows as plain objects. */
   queryAll(sql: string, params?: unknown[]): Record<string, unknown>[];
+  /** Closes the underlying SQLite database connection. */
   close(): void;
 }
 
 const requireMod = createRequire(import.meta.url);
 
+/**
+ * Opens a SQLite database file or `:memory:` instance using the runtime's
+ * built-in SQLite driver (`bun:sqlite` or `node:sqlite`).
+ *
+ * @param filename - Path to the SQLite file or `":memory:"`.
+ * @returns Synchronous `SqliteDb` wrapper.
+ */
 export function openSqlite(filename = ":memory:"): SqliteDb {
   if (typeof process !== "undefined" && process.versions && process.versions.bun) {
     const { Database } = requireMod("bun:sqlite") as {

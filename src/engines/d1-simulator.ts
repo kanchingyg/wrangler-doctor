@@ -24,6 +24,15 @@ function findMigrationDirs(
   return [...dirs];
 }
 
+/**
+ * Simulates D1 SQL migrations in memory and emulates remote D1 statement splitting rules
+ * (`WD201` through `WD206`), including trigger `begin` casing, banned transaction statements,
+ * unindexed foreign keys via `EXPLAIN QUERY PLAN`, Workers Builds deploy skew, and `>100` bound parameters.
+ *
+ * @param projectDir - Root directory of the Cloudflare Worker project.
+ * @param parsedConfig - Parsed Wrangler configuration, or `null` if none exists.
+ * @returns Array of `d1-simulator` findings.
+ */
 export function simulateD1Migrations(
   projectDir: string,
   parsedConfig: ParsedWorkerConfig | null
@@ -338,12 +347,26 @@ function escapeSqlValue(val: unknown): string {
   return `'${String(val).replace(/'/g, "''")}'`;
 }
 
+/**
+ * Options for exporting a local D1 SQLite database file to SQL statements.
+ */
 export interface ExportLocalD1Options {
+  /** Emit only `CREATE` DDL statements without `INSERT` rows. */
   schemaOnly?: boolean;
+  /** Emit only `INSERT` statements without `CREATE` DDL statements. */
   dataOnly?: boolean;
+  /** Restrict export to a single table name. */
   table?: string;
 }
 
+/**
+ * Exports a local D1 `.sqlite` file to portable SQL statements (`CREATE TABLE`, `INSERT INTO`,
+ * indexes, triggers, and views), filtering internal `sqlite_*` and `_cf_*` metadata tables.
+ *
+ * @param sqlitePath - Path to the local `.sqlite` database file.
+ * @param options - Optional schema, data, or single-table filters.
+ * @returns SQL dump string terminated with a newline.
+ */
 export function exportLocalD1Sql(
   sqlitePath: string,
   options: ExportLocalD1Options = {}

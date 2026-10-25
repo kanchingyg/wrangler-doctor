@@ -1,3 +1,17 @@
+/**
+ * Offline pre-flight diagnostics (`WD101`..`WD404`), D1 SQLite exporter, and safe auto-fixer
+ * for Cloudflare Workers (`wrangler.jsonc`, `wrangler.toml`, and `cloudflare.config.ts`).
+ *
+ * @example
+ * ```ts
+ * import { diagnoseProject, exportLocalD1Sql } from "@kanchingyg/wrangler-doctor";
+ *
+ * const report = diagnoseProject({ projectDir: ".", strict: true });
+ * console.log(report.summary.errors, report.findings);
+ * ```
+ *
+ * @module
+ */
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import {
@@ -26,13 +40,17 @@ import type { DiagnoseOptions, DoctorReport, Finding } from "./types.js";
 
 export type {
   BindingSet,
+  D1ConfigEntry,
   DiagnoseOptions,
   DoctorReport,
   DoctorSummary,
+  DurableObjectClassEntry,
   EngineId,
   Finding,
   ParsedWorkerConfig,
-  Severity
+  ServiceBindingEntry,
+  Severity,
+  WorkflowClassEntry
 } from "./types.js";
 
 export {
