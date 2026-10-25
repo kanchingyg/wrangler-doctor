@@ -1,0 +1,54 @@
+{
+  "name": "broken-worker",
+  "main": "src/index.ts",
+  "workers_dev": true,
+  "upload_source_maps": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "main-db",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "services": [
+    {
+      "binding": "STOCK",
+      "service": "stock-worker",
+      "environment": "production"
+    }
+  ],
+  "workflows": [
+    {
+      "binding": "ORDER_WF",
+      "name": "order-workflow",
+      "class_name": "OrderWorkflow"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CART_DO",
+        "class_name": "CartDurableObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["CartDurableObject"]
+    }
+  ],
+  "vars": {
+    "STRIPE_SECRET_KEY": "sk_live_51HxyzExampleSecretKey"
+  },
+  "env": {
+    "production": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "main-db-prod"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "name": "wrangler-doctor",
+  "version": "0.1.0",
+  "description": "Checks Cloudflare Workers configs, D1 migrations, and workerd contracts offline, plus fast local D1 and Workflow test harnesses.",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./test": {
+      "types": "./dist/test/index.d.ts",
+      "import": "./dist/test/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "wrangler-doctor": "dist/cli.js",
+    "cf-doctor": "dist/cli.js",
+    "cf-check": "dist/cli.js",
+    "wrangler-shadow": "dist/cli.js"
+  },
+  "files": [
+    "dist/cli.js",
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/fixer.d.ts",
+    "dist/types.d.ts",
+    "dist/sqlite-adapter.d.ts",
+    "dist/engines/*.d.ts",
+    "dist/test/index.js",
+    "dist/test/index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.5.0",
+    "bun": ">=1.1.0"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "test": "bun test",
+    "typecheck": "bun x tsc --noEmit",
+    "lint": "bun x tsc --noEmit",
+    "check-versions": "bun run scripts/check-versions.ts",
+    "build": "bun build src/cli.ts --outfile dist/cli.js --target node --external bun:sqlite && bun build src/index.ts --outfile dist/index.js --target node --external bun:sqlite && bun build src/test/index.ts --outfile dist/test/index.js --target node --external bun:sqlite && bun x tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run check-versions && bun run typecheck && bun test && bun run build"
+  },
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "wrangler",
+    "workerd",
+    "d1",
+    "workflows",
+    "durable-objects",
+    "vitest",
+    "diagnostics"
+  ],
+  "license": "MIT",
+  "author": "Augusto Cerrutti (https://github.com/kanchingyg)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kanchingyg/wrangler-doctor.git"
+  },
+  "bugs": "https://github.com/kanchingyg/wrangler-doctor/issues",
+  "homepage": "https://github.com/kanchingyg/wrangler-doctor#readme",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "bun-types": "^1.4.2",
+    "typescript": "5.8.3"
+  }
+}
