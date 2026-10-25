@@ -12,7 +12,7 @@ import {
 } from "./index.js";
 import type { DoctorReport } from "./types.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 
 function printHelp(): void {
   console.log(`wrangler-doctor v${VERSION}

@@ -1,0 +1,76 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm for trusted publishing
+        run: |
+          set -euo pipefail
+          npm install -g npm@latest
+          npm -v
+
+      - name: Install
+        run: bun install
+      - name: Versions match tag
+        run: bun run scripts/check-versions.ts
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Test
+        run: bun test
+      - name: Build library and CLI
+        run: bun run build
+
+      - name: Publish to npm (skip if version already exists)
+        run: |
+          set -euo pipefail
+          VER=$(node -p "require('./package.json').version")
+          set +e
+          bun run scripts/registry-has-version.ts npm wrangler-doctor "$VER"
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "npm already has wrangler-doctor@${VER}; skipping publish"
+          else
+            npm publish --access public --provenance
+          fi
+
+      - name: Publish to JSR (skip if version already exists)
+        run: |
+          set -euo pipefail
+          VER=$(node -p "require('./jsr.json').version")
+          set +e
+          bun run scripts/registry-has-version.ts jsr @kanchingyg/wrangler-doctor "$VER"
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "JSR already has @kanchingyg/wrangler-doctor@${VER}; skipping publish"
+          else
+            bunx jsr publish --allow-dirty
+          fi
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

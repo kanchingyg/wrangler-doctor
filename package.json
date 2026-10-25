@@ -1,6 +1,6 @@
 {
   "name": "wrangler-doctor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Checks Cloudflare Workers configs, D1 migrations, and workerd contracts offline, plus fast local D1 and Workflow test harnesses.",
   "type": "module",
   "types": "./dist/index.d.ts",
